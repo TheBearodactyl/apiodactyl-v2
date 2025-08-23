@@ -1,0 +1,33 @@
+services:
+  db:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: bearodactyl
+      MONGO_INITDB_ROOT_PASSWORD: ReggieMyLove<3<3
+      MONGO_INITDB_DATABASE: bearodata
+    volumes:
+      - db_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --username bearodactyl --password ReggieMyLove<3<3 --authenticationDatabase admin --eval 'db.adminCommand(\"ping\")' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ROCKET_ADDRESS: 0.0.0.0
+      ROCKET_PORT: 2379
+      MONGO_URL: "mongodb://bearodactyl:ReggieMyLove<3<3@db:27017/bearodata?authSource=admin"
+    ports:
+      - "2379:2379"
+    volumes:
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+    entrypoint: ["/app/docker-entrypoint.sh"]
+
+volumes:
+  db_data:
+
