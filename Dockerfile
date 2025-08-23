@@ -1,37 +1,36 @@
 FROM rust:bookworm AS builder
-
-RUN apt-get update && apt-get install -y \
+RUN apt update && apt-get update
+RUN apt upgrade -y && apt-get upgrade -y
+RUN apt install -y \
     build-essential \
-    pkg-config \
     curl \
-    libssl-dev \
     neovim \
-    fish
-
+    fish \
+    pkg-config \
+    libssl-dev
 WORKDIR /app
-
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
-
 COPY src ./src
-RUN cargo build --release
+RUN cargo build -j8
 
 FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
+RUN apt update && apt-get update
+RUN apt upgrade -y && apt-get upgrade -y
+RUN apt install -y \
     bash \
     curl \
     fish \
-    neovim && \
-    rm -rf /var/lib/apt/lists/*
-
+    xz-utils \
+    neovim \
+    ca-certificates \
+    libssl3 \
+    gnupg
+RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+RUN echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+RUN apt update && apt install -y mongodb-mongosh
 WORKDIR /app
-
-COPY --from=builder /app/target/release/apiodactyl .
-
+COPY --from=builder /app/target/debug/apiodactyl .
 COPY ./docker-entrypoint.sh .
-
+COPY ./Rocket.toml .
 RUN chmod +x docker-entrypoint.sh
-
 ENTRYPOINT ["./docker-entrypoint.sh"]
