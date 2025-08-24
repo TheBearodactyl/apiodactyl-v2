@@ -28,8 +28,8 @@ use {
 pub struct BookQuery {
     title: Option<String>,
     author: Option<String>,
-    genre: Option<String>,
-    tag: Option<String>,
+    genre: Option<Vec<String>>,
+    tag: Option<Vec<String>>,
     status: Option<String>,
     explicit: Option<String>,
     #[field(name = "minRating")]
@@ -37,6 +37,95 @@ pub struct BookQuery {
     #[field(name = "maxRating")]
     max_rating: Option<i32>,
     sort: Option<String>,
+}
+
+#[derive(Debug)]
+enum FilterOperation {
+    Include(String),
+    Require(String),
+    Exclude(String),
+}
+
+impl FilterOperation {
+    fn parse_filters(filters: &[String]) -> Vec<FilterOperation> {
+        filters
+            .iter()
+            .map(|filter| {
+                if let Some(stripped) = filter.strip_prefix('+') {
+                    FilterOperation::Require(stripped.to_string())
+                } else if let Some(stripped) = filter.strip_prefix('-') {
+                    FilterOperation::Exclude(stripped.to_string())
+                } else {
+                    FilterOperation::Include(filter.clone())
+                }
+            })
+            .collect()
+    }
+}
+
+fn matches_filter_operations(
+    book_items: &[Option<String>],
+    operations: &[FilterOperation],
+) -> bool {
+    let book_items_lower: Vec<String> = book_items
+        .iter()
+        .filter_map(|item| item.as_ref().map(|s| s.to_lowercase()))
+        .collect();
+
+    let includes: Vec<_> = operations
+        .iter()
+        .filter_map(|op| match op {
+            FilterOperation::Include(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+
+    let requires: Vec<_> = operations
+        .iter()
+        .filter_map(|op| match op {
+            FilterOperation::Require(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+
+    let excludes: Vec<_> = operations
+        .iter()
+        .filter_map(|op| match op {
+            FilterOperation::Exclude(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+
+    for exclude in excludes {
+        if book_items_lower
+            .iter()
+            .any(|item| item.contains(&exclude.to_lowercase()))
+        {
+            return false;
+        }
+    }
+
+    for require in requires {
+        if !book_items_lower
+            .iter()
+            .any(|item| item.contains(&require.to_lowercase()))
+        {
+            return false;
+        }
+    }
+
+    if !includes.is_empty() {
+        let has_any_include = includes.iter().any(|include| {
+            book_items_lower
+                .iter()
+                .any(|item| item.contains(&include.to_lowercase()))
+        });
+        if !has_any_include {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[derive(Deserialize)]
@@ -132,28 +221,14 @@ pub async fn get_books(
         results.push(book);
     }
 
-    if let Some(genre_filter) = &query.genre {
-        results.retain(|book| {
-            book.genres.iter().any(|g| {
-                if let Some(genre) = g {
-                    genre.to_lowercase().contains(&genre_filter.to_lowercase())
-                } else {
-                    false
-                }
-            })
-        });
+    if let Some(genre_filters) = &query.genre {
+        let genre_operations = FilterOperation::parse_filters(genre_filters);
+        results.retain(|book| matches_filter_operations(&book.genres, &genre_operations));
     }
 
-    if let Some(tag_filter) = &query.tag {
-        results.retain(|book| {
-            book.tags.iter().any(|t| {
-                if let Some(tag) = t {
-                    tag.to_lowercase().contains(&tag_filter.to_lowercase())
-                } else {
-                    false
-                }
-            })
-        });
+    if let Some(tag_filters) = &query.tag {
+        let tag_operations = FilterOperation::parse_filters(tag_filters);
+        results.retain(|book| matches_filter_operations(&book.tags, &tag_operations));
     }
 
     Ok(Json(results))
