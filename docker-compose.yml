@@ -1,20 +1,18 @@
 services:
   db:
-    image: mongo:7
+    image: mongo:latest
     environment:
-      MONGO_INITDB_ROOT_USERNAME: bearodactyl
-      MONGO_INITDB_ROOT_PASSWORD: ReggieMyLove<3<3
       MONGO_INITDB_DATABASE: bearodata
-    ports:
-      - "27017:27017"
     volumes:
       - db_data:/data/db
+    ports:
+      - "27017:27017"
+    command: [--bind_ip_all]
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      test: echo 'db.runCommand("ping").ok' | mongosh mongodb://localhost:27017/bearodata --quiet
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 40s
 
   backend:
     build: .
@@ -22,7 +20,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      MONGODB_URI: mongodb://bearodactyl:ReggieMyLove<3<3@db:27017/bearodata?authSource=admin
+      MONGODB_URL: mongodb://db:27017/bearodata
       ROCKET_ADDRESS: 0.0.0.0
       ROCKET_PORT: 2379
     ports:

@@ -2,4 +2,4 @@
 port = 2379
 
 [default.databases.bearodata]
-url = "mongodb://localhost:27017/bearodata"
+url = "mongodb://db:27017/bearodata"
