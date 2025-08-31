@@ -3,6 +3,7 @@ pub mod wplace;
 pub mod books;
 pub mod games;
 pub mod projects;
+pub mod misc;
 
 #[rocket::get("/")]
 pub fn index() -> &'static str {

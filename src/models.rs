@@ -1,8 +1,67 @@
 use {
     chrono::NaiveDateTime,
     mongodb::bson::{doc, oid::ObjectId},
-    serde::{Deserialize, Serialize}, std::collections::HashMap,
+    rocket::{
+        Request,
+        request::{FromRequest, Outcome},
+    },
+    serde::{Deserialize, Serialize},
+    std::collections::HashMap,
 };
+
+pub struct Locale(pub Option<String>);
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum LocalizedString {
+    Simple(String),
+    Localized(HashMap<String, String>),
+}
+
+impl LocalizedString {
+    pub fn get_text(&self, locale: Option<&str>) -> String {
+        match self {
+            LocalizedString::Simple(text) => text.clone(),
+            LocalizedString::Localized(map) => {
+                if let Some(locale) = locale {
+                    if let Some(text) = map.get(locale) {
+                        return text.clone();
+                    }
+
+                    if let Some(lang) = locale.split('-').next()
+                        && let Some(text) = map.get(lang)
+                    {
+                        return text.clone();
+                    }
+                }
+
+                map.get("en")
+                    .or_else(|| map.values().next())
+                    .cloned()
+                    .unwrap_or_default()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum LocalizedStringArray {
+    Simple(Vec<String>),
+    Localized(Vec<LocalizedString>),
+}
+
+impl LocalizedStringArray {
+    pub fn get_texts(&self, locale: Option<&str>) -> Vec<String> {
+        match self {
+            LocalizedStringArray::Simple(texts) => texts.clone(),
+            LocalizedStringArray::Localized(localized_texts) => localized_texts
+                .iter()
+                .map(|ls| ls.get_text(locale))
+                .collect(),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(crate = "rocket::serde")]
@@ -96,14 +155,14 @@ pub struct UpdateProject {
 pub struct Book {
     #[serde(rename = "_id")]
     pub oid: ObjectId,
-    pub title: String,
-    pub author: String,
-    pub genres: Vec<Option<String>>,
-    pub tags: Vec<Option<String>>,
+    pub title: LocalizedString,
+    pub author: LocalizedString,
+    pub genres: LocalizedStringArray,
+    pub tags: LocalizedStringArray,
     pub rating: i32,
-    pub status: String,
-    pub description: String,
-    pub my_thoughts: String,
+    pub status: LocalizedString,
+    pub description: LocalizedString,
+    pub my_thoughts: LocalizedString,
     pub links: Option<HashMap<String, String>>,
     pub cover_image: String,
     pub explicit: bool,
@@ -113,14 +172,14 @@ pub struct Book {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct NewBook {
-    pub title: String,
-    pub author: String,
-    pub genres: Vec<String>,
-    pub tags: Vec<String>,
+    pub title: LocalizedString,
+    pub author: LocalizedString,
+    pub genres: LocalizedStringArray,
+    pub tags: LocalizedStringArray,
     pub rating: i32,
-    pub status: String,
-    pub description: String,
-    pub my_thoughts: String,
+    pub status: LocalizedString,
+    pub description: LocalizedString,
+    pub my_thoughts: LocalizedString,
     pub links: Option<HashMap<String, String>>,
     pub cover_image: String,
     pub explicit: bool,
@@ -130,14 +189,14 @@ pub struct NewBook {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct UpdateBook {
-    pub title: Option<String>,
-    pub author: Option<String>,
-    pub genres: Option<Vec<String>>,
-    pub tags: Option<Vec<String>>,
+    pub title: Option<LocalizedString>,
+    pub author: Option<LocalizedString>,
+    pub genres: Option<LocalizedStringArray>,
+    pub tags: Option<LocalizedStringArray>,
     pub rating: Option<i32>,
-    pub status: Option<String>,
-    pub description: Option<String>,
-    pub my_thoughts: Option<String>,
+    pub status: Option<LocalizedString>,
+    pub description: Option<LocalizedString>,
+    pub my_thoughts: Option<LocalizedString>,
     pub links: Option<HashMap<String, String>>,
     pub cover_image: Option<String>,
     pub explicit: Option<bool>,
@@ -218,22 +277,53 @@ pub struct NewApiKey {
     pub is_admin: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct LocalizedBook {
+    #[serde(rename = "_id")]
+    pub oid: ObjectId,
+    pub title: String,
+    pub author: String,
+    pub genres: Vec<String>,
+    pub tags: Vec<String>,
+    pub rating: i32,
+    pub status: String,
+    pub description: String,
+    pub my_thoughts: String,
+    pub links: Option<HashMap<String, String>>,
+    pub cover_image: String,
+    pub explicit: bool,
+    pub color: Option<String>,
+}
+
+impl Book {
+    pub fn localize(&self, locale: Option<&str>) -> LocalizedBook {
+        LocalizedBook {
+            oid: self.oid,
+            title: self.title.get_text(locale),
+            author: self.author.get_text(locale),
+            genres: self.genres.get_texts(locale),
+            tags: self.tags.get_texts(locale),
+            rating: self.rating,
+            status: self.status.get_text(locale),
+            description: self.description.get_text(locale),
+            my_thoughts: self.my_thoughts.get_text(locale),
+            links: self.links.clone(),
+            cover_image: self.cover_image.clone(),
+            explicit: self.explicit,
+            color: self.color.clone(),
+        }
+    }
+}
+
 impl NewBook {
     pub fn to_book_with_id(&self, oid: ObjectId) -> Book {
         Book {
             oid,
             title: self.title.clone(),
             author: self.author.clone(),
-            genres: self
-                .genres
-                .iter()
-                .map(|g| Some(g.to_owned()))
-                .collect::<Vec<Option<String>>>(),
-            tags: self
-                .tags
-                .iter()
-                .map(|t| Some(t.to_owned()))
-                .collect::<Vec<Option<String>>>(),
+            genres: self.genres.clone(),
+            tags: self.tags.clone(),
             rating: self.rating,
             status: self.status.clone(),
             description: self.description.clone(),
@@ -243,5 +333,21 @@ impl NewBook {
             explicit: self.explicit,
             color: self.color.clone(),
         }
+    }
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for Locale {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let locale = request
+            .headers()
+            .get_one("Accept-Language")
+            .and_then(|header| {
+                // Parse Accept-Language header and get the first locale
+                header.split(',').next().map(|s| s.trim().to_string())
+            });
+        Outcome::Success(Locale(locale))
     }
 }

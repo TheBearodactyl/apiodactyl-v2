@@ -2,7 +2,7 @@ use {
     crate::{
         auth::User,
         db::BearoData,
-        models::{Book, NewBook, UpdateBook},
+        models::{Book, Locale, LocalizedBook, LocalizedStringArray, NewBook, UpdateBook},
     },
     mongodb::bson::{self, Document, doc, oid::ObjectId},
     rocket::{
@@ -37,6 +37,7 @@ pub struct BookQuery {
     #[field(name = "maxRating")]
     max_rating: Option<i32>,
     sort: Option<String>,
+    locale: Option<String>,
 }
 
 #[derive(Debug)]
@@ -64,13 +65,12 @@ impl FilterOperation {
 }
 
 fn matches_filter_operations(
-    book_items: &[Option<String>],
+    book_items: &LocalizedStringArray,
     operations: &[FilterOperation],
+    locale: Option<&str>,
 ) -> bool {
-    let book_items_lower: Vec<String> = book_items
-        .iter()
-        .filter_map(|item| item.as_ref().map(|s| s.to_lowercase()))
-        .collect();
+    let book_items_text = book_items.get_texts(locale);
+    let book_items_lower: Vec<String> = book_items_text.iter().map(|s| s.to_lowercase()).collect();
 
     let includes: Vec<_> = operations
         .iter()
@@ -155,10 +155,12 @@ pub struct ApiResponse {
 pub async fn get_books(
     db: Connection<BearoData>,
     query: BookQuery,
-) -> Result<Json<Vec<Book>>, Status> {
+    locale: Locale,
+) -> Result<Json<Vec<LocalizedBook>>, Status> {
     let collection: Collection<Book> = db.database("bearodata").collection("books");
     let mut filter = Document::new();
     let mut options = FindOptions::default();
+    let current_locale = query.locale.as_deref().or(locale.0.as_deref());
 
     if let Some(title_filter) = &query.title {
         filter.insert("title", doc! { "$regex": title_filter, "$options": "i" });
@@ -221,26 +223,72 @@ pub async fn get_books(
         results.push(book);
     }
 
+    if let Some(title_filter) = &query.title {
+        let title_lower = title_filter.to_lowercase();
+        results.retain(|book| {
+            book.title
+                .get_text(current_locale)
+                .to_lowercase()
+                .contains(&title_lower)
+        });
+    }
+
+    if let Some(author_filter) = &query.author {
+        let author_lower = author_filter.to_lowercase();
+        results.retain(|book| {
+            book.author
+                .get_text(current_locale)
+                .to_lowercase()
+                .contains(&author_lower)
+        });
+    }
+
     if let Some(genre_filters) = &query.genre {
         let genre_operations = FilterOperation::parse_filters(genre_filters);
-        results.retain(|book| matches_filter_operations(&book.genres, &genre_operations));
+        results.retain(|book| {
+            matches_filter_operations(&book.genres, &genre_operations, current_locale)
+        });
     }
 
     if let Some(tag_filters) = &query.tag {
         let tag_operations = FilterOperation::parse_filters(tag_filters);
-        results.retain(|book| matches_filter_operations(&book.tags, &tag_operations));
+        results
+            .retain(|book| matches_filter_operations(&book.tags, &tag_operations, current_locale));
     }
 
-    Ok(Json(results))
+    let localized_results = results
+        .into_iter()
+        .map(|book| book.localize(current_locale))
+        .collect();
+
+    Ok(Json(localized_results))
 }
 
 #[get("/<book_id>")]
 pub async fn get_book_by_id(
     db: Connection<BearoData>,
     book_id: String,
-) -> Result<Json<Book>, Status> {
+    locale: Locale,
+) -> Result<Json<LocalizedBook>, Status> {
     let collection = db.database("bearodata").collection::<Book>("books");
 
+    let oid = ObjectId::parse_str(&book_id).map_err(|_| Status::BadRequest)?;
+
+    let book = collection
+        .find_one(doc! { "_id": oid }, None)
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+
+    Ok(Json(book.localize(locale.0.as_deref())))
+}
+
+#[get("/raw/<book_id>")]
+pub async fn get_raw_book_by_id(
+    db: Connection<BearoData>,
+    book_id: String,
+) -> Result<Json<Book>, Status> {
+    let collection = db.database("bearodata").collection::<Book>("books");
     let oid = ObjectId::parse_str(&book_id).map_err(|_| Status::BadRequest)?;
 
     let book = collection
@@ -314,6 +362,7 @@ pub async fn patch_book(
     user: User,
     book_id: String,
     patch_data: Json<UpdateBook>,
+    locale: Locale,
 ) -> Result<Json<Book>, Status> {
     user.require_admin().map_err(|_| Status::Forbidden)?;
 
@@ -322,30 +371,31 @@ pub async fn patch_book(
 
     let mut update_doc = Document::new();
     let patch = patch_data.into_inner();
+    let selected_locale = locale.0.as_deref();
 
     if let Some(title) = patch.title {
-        update_doc.insert("title", title);
+        update_doc.insert("title", title.get_text(selected_locale));
     }
     if let Some(author) = patch.author {
-        update_doc.insert("author", author);
+        update_doc.insert("author", author.get_text(selected_locale));
     }
     if let Some(genres) = patch.genres {
-        update_doc.insert("genres", genres);
+        update_doc.insert("genres", genres.get_texts(selected_locale));
     }
     if let Some(tags) = patch.tags {
-        update_doc.insert("tags", tags);
+        update_doc.insert("tags", tags.get_texts(selected_locale));
     }
     if let Some(rating) = patch.rating {
         update_doc.insert("rating", rating);
     }
     if let Some(status) = patch.status {
-        update_doc.insert("status", status);
+        update_doc.insert("status", status.get_text(selected_locale));
     }
     if let Some(description) = patch.description {
-        update_doc.insert("description", description);
+        update_doc.insert("description", description.get_text(selected_locale));
     }
     if let Some(my_thoughts) = patch.my_thoughts {
-        update_doc.insert("my_thoughts", my_thoughts);
+        update_doc.insert("my_thoughts", my_thoughts.get_text(selected_locale));
     }
     if let Some(links) = patch.links {
         update_doc.insert(
@@ -492,6 +542,7 @@ pub fn routes() -> Vec<Route> {
         patch_book,
         delete_book,
         bulk_delete_books,
-        bulk_update_books
+        bulk_update_books,
+        get_raw_book_by_id
     ]
 }

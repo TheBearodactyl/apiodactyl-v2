@@ -70,4 +70,5 @@ async fn rocket() -> _ {
         .mount("/read-watch", handlers::books::routes())
         .mount("/games", handlers::games::routes())
         .mount("/projects", handlers::projects::routes())
+        .mount("/misc", handlers::misc::routes())
 }
