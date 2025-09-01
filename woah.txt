@@ -1,0 +1,20 @@
+curl -X POST https://api.bearodactyl.dev/read-watch -H "Content-Type: application/json" -d $'{
+"title": "(random chars)",
+"author": {
+    "en": "english",
+    "jp": "japanese",
+    "ar": "arabic"
+},
+"genres": ["book", "woah"],
+"tags": ["book", "woah"],
+"rating": 5,
+"status": "Reading",
+"description": "WOAAAHHH",
+"my_thoughts": "Its a BOOK!",
+"links": {
+   "Wikipedia": "https://en.wikipedia.org/wiki/Book"
+},
+"cover_image": "woaah",
+"explicit" : false,
+"color": "#ff00bb"
+}' -H $"Authorization: Bearer ak_5739a40384f44620abf41e2a26b4f48d"
