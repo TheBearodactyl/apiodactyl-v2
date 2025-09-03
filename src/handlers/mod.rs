@@ -1,9 +1,23 @@
-pub mod reviews;
-pub mod wplace;
+//! # Request handlers module
+//!
+//! This module contains all the HTTP request handlers for the API endpoints.
+//! Each submodule handles a specific type of resource.
+//!
+//! ## Submodules
+//!
+//! - `reviews`: Handlers for review-related operations
+//! - `wplace`: Handlers for workplace screenshot management
+//! - `books`: Handlers for book catalog operations
+//! - `games`: Handlers for game collection management
+//! - `projects`: Handlers for project portfolio
+//! - `misc`: Miscellaneous handlers
+
 pub mod books;
 pub mod games;
-pub mod projects;
 pub mod misc;
+pub mod projects;
+pub mod reviews;
+pub mod wplace;
 
 #[rocket::get("/")]
 pub fn index() -> &'static str {
@@ -114,4 +128,23 @@ pub fn catch500() -> &'static str {
     r#"
 you lost the game.
     "#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rocket::http::Status;
+    use rocket::local::blocking::Client;
+
+    #[test]
+    fn test_index_route() {
+        let rocket = rocket::build().mount("/", rocket::routes![index]);
+        let client = Client::tracked(rocket).expect("valid rocket");
+
+        let response = client.get("/").dispatch();
+        assert_eq!(response.status(), Status::Ok);
+
+        let body = response.into_string().unwrap();
+        assert!(body.contains("8"));
+    }
 }

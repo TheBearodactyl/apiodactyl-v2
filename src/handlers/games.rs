@@ -2,9 +2,7 @@ use crate::auth::User;
 use crate::db::BearoData;
 use crate::models::{Game, NewGame, UpdateGame};
 use mongodb::bson;
-use mongodb::{
-    bson::{Document, doc, oid::ObjectId},
-};
+use mongodb::bson::{Document, doc, oid::ObjectId};
 use rocket::form::FromForm;
 use rocket::futures::TryStreamExt;
 use rocket::serde::{Deserialize, Serialize, json::Json};

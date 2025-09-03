@@ -1,3 +1,8 @@
+//! # Book handlers
+//!
+//! This module provides CRUD operations for the book collection.
+//! Supports advanced filtering, localization, and pagination.
+
 use {
     crate::{
         auth::User,
@@ -24,6 +29,9 @@ use {
     std::collections::HashMap,
 };
 
+/// Query parameters for filtering book searches.
+///
+/// Supports filtering by title, author, genres, tags, status, rating, and explicit content.
 #[derive(FromForm, Debug)]
 pub struct BookQuery {
     title: Option<String>,
@@ -40,6 +48,11 @@ pub struct BookQuery {
     locale: Option<String>,
 }
 
+/// Filter operation type for advanced query filtering.
+///
+/// - `Include`: Item should include this value (OR operation)
+/// - `Require`: Item must have this value (AND operation) - prefix with '+'
+/// - `Exclude`: Item must not have this value - prefix with '-'
 #[derive(Debug)]
 enum FilterOperation {
     Include(String),
@@ -545,4 +558,112 @@ pub fn routes() -> Vec<Route> {
         bulk_update_books,
         get_raw_book_by_id
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_operation_parsing() {
+        let filters = vec![
+            "+required".to_string(),
+            "-excluded".to_string(),
+            "included".to_string(),
+        ];
+
+        let operations = FilterOperation::parse_filters(&filters);
+
+        assert_eq!(operations.len(), 3);
+
+        match &operations[0] {
+            FilterOperation::Require(s) => assert_eq!(s, "required"),
+            _ => panic!("Expected Require operation"),
+        }
+
+        match &operations[1] {
+            FilterOperation::Exclude(s) => assert_eq!(s, "excluded"),
+            _ => panic!("Expected Exclude operation"),
+        }
+
+        match &operations[2] {
+            FilterOperation::Include(s) => assert_eq!(s, "included"),
+            _ => panic!("Expected Include operation"),
+        }
+    }
+
+    #[test]
+    fn test_matches_filter_operations_include() {
+        let array =
+            LocalizedStringArray::Simple(vec!["Fiction".to_string(), "Adventure".to_string()]);
+
+        let operations = vec![
+            FilterOperation::Include("fiction".to_string()),
+            FilterOperation::Include("mystery".to_string()),
+        ];
+
+        assert!(matches_filter_operations(&array, &operations, None));
+    }
+
+    #[test]
+    fn test_matches_filter_operations_require() {
+        let array =
+            LocalizedStringArray::Simple(vec!["Fiction".to_string(), "Adventure".to_string()]);
+
+        let operations = vec![
+            FilterOperation::Require("fiction".to_string()),
+            FilterOperation::Require("adventure".to_string()),
+        ];
+
+        assert!(matches_filter_operations(&array, &operations, None));
+
+        let operations_fail = vec![
+            FilterOperation::Require("fiction".to_string()),
+            FilterOperation::Require("mystery".to_string()),
+        ];
+
+        assert!(!matches_filter_operations(&array, &operations_fail, None));
+    }
+
+    #[test]
+    fn test_matches_filter_operations_exclude() {
+        let array =
+            LocalizedStringArray::Simple(vec!["Fiction".to_string(), "Adventure".to_string()]);
+
+        let operations = vec![
+            FilterOperation::Include("fiction".to_string()),
+            FilterOperation::Exclude("mystery".to_string()),
+        ];
+
+        assert!(matches_filter_operations(&array, &operations, None));
+
+        let operations_fail = vec![
+            FilterOperation::Include("fiction".to_string()),
+            FilterOperation::Exclude("adventure".to_string()),
+        ];
+
+        assert!(!matches_filter_operations(&array, &operations_fail, None));
+    }
+
+    #[test]
+    fn test_routes_registration() {
+        let routes = routes();
+
+        assert_eq!(routes.len(), 9);
+
+        let route_names: Vec<&str> = routes
+            .iter()
+            .map(|r| r.name.as_ref().map(|n| n.as_str()).unwrap_or(""))
+            .collect();
+
+        assert!(route_names.contains(&"get_books"));
+        assert!(route_names.contains(&"get_book_by_id"));
+        assert!(route_names.contains(&"post_books"));
+        assert!(route_names.contains(&"update_book"));
+        assert!(route_names.contains(&"patch_book"));
+        assert!(route_names.contains(&"delete_book"));
+        assert!(route_names.contains(&"bulk_delete_books"));
+        assert!(route_names.contains(&"bulk_update_books"));
+        assert!(route_names.contains(&"get_raw_book_by_id"));
+    }
 }

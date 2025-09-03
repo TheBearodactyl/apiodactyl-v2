@@ -1,7 +1,26 @@
+//! # Command-line interface module
+//!
+//! This module provides CLI commands for managing API keys and other administrative tasks.
+//!
+//! ## Available Commands
+//!
+//! - `create-admin-key`: Create a new admin API key
+//! - `list-admins`: List all admin API keys
+//! - `revoke-key`: Revoke an existing API key
+//!
+//! ## Usage
+//!
+//! The CLI is automatically invoked when command-line arguments are provided to the application.
+
 use crate::auth::AuthService;
 use crate::db::BearoData;
 use clap::{Arg, Command};
 
+/// Builds the CLI command structure.
+///
+/// # Returns
+///
+/// A configured clap Command with all available subcommands.
 pub fn cli() -> Command {
     Command::new("your-app")
         .subcommand(
@@ -26,6 +45,17 @@ pub fn cli() -> Command {
         )
 }
 
+/// Handles CLI command execution.
+///
+/// Processes the command-line arguments and executes the appropriate command.
+///
+/// # Arguments
+///
+/// * `auth_service` - The authentication service for managing API keys
+///
+/// # Returns
+///
+/// Ok(()) on success, or an error if command execution fails.
 pub async fn handle_cli(auth_service: AuthService) -> Result<(), Box<dyn std::error::Error>> {
     let matches = cli().get_matches();
 
@@ -115,6 +145,17 @@ pub async fn handle_cli(auth_service: AuthService) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
+/// Creates a database connection for CLI operations.
+///
+/// Reads the database URL from environment variables and establishes a connection.
+///
+/// # Returns
+///
+/// A connection to the `bearodata` database or an error if connection fails.
+///
+/// # Environment Variables
+///
+/// - `DATABASE_URL` or `MONGODB_URL`: MongoDB connection string (required)
 async fn create_db_connection() -> Result<BearoData, Box<dyn std::error::Error>> {
     use rocket_db_pools::mongodb::{Client, options::ClientOptions};
     use std::env;
@@ -129,4 +170,86 @@ async fn create_db_connection() -> Result<BearoData, Box<dyn std::error::Error>>
     let client = Client::with_options(client_options)?;
 
     Ok(BearoData::from(client))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_structure() {
+        let cli = cli();
+
+        assert_eq!(cli.get_name(), "your-app");
+
+        let subcommands: Vec<&str> = cli.get_subcommands().map(|cmd| cmd.get_name()).collect();
+
+        assert!(subcommands.contains(&"create-admin-key"));
+        assert!(subcommands.contains(&"list-admins"));
+        assert!(subcommands.contains(&"revoke-key"));
+    }
+
+    #[test]
+    fn test_create_admin_key_command() {
+        let cli = cli();
+        let create_cmd = cli
+            .get_subcommands()
+            .find(|cmd| cmd.get_name() == "create-admin-key")
+            .expect("create-admin-key command should exist");
+
+        assert_eq!(
+            create_cmd.get_about().map(|s| s.to_string()),
+            Some("Create a new admin API key".to_string())
+        );
+
+        let args: Vec<&str> = create_cmd
+            .get_arguments()
+            .map(|arg| arg.get_id().as_str())
+            .collect();
+
+        assert!(args.contains(&"key"));
+    }
+
+    #[test]
+    fn test_revoke_key_command() {
+        let cli = cli();
+        let revoke_cmd = cli
+            .get_subcommands()
+            .find(|cmd| cmd.get_name() == "revoke-key")
+            .expect("revoke-key command should exist");
+
+        assert_eq!(
+            revoke_cmd.get_about().map(|s| s.to_string()),
+            Some("Revoke an API key".to_string())
+        );
+
+        let key_arg = revoke_cmd
+            .get_arguments()
+            .find(|arg| arg.get_id() == "key")
+            .expect("key argument should exist");
+
+        assert!(key_arg.is_required_set());
+    }
+
+    #[test]
+    fn test_list_admins_command() {
+        let cli = cli();
+        let list_cmd = cli
+            .get_subcommands()
+            .find(|cmd| cmd.get_name() == "list-admins")
+            .expect("list-admins command should exist");
+
+        assert_eq!(
+            list_cmd.get_about().map(|s| s.to_string()),
+            Some("List all admin API keys".to_string())
+        );
+
+        let required_args: Vec<&str> = list_cmd
+            .get_arguments()
+            .filter(|arg| arg.is_required_set())
+            .map(|arg| arg.get_id().as_str())
+            .collect();
+
+        assert!(required_args.is_empty());
+    }
 }

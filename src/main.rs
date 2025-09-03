@@ -1,3 +1,11 @@
+//! # Apiodactyl - A RESTful API for data management on `https://bearodactyl.dev`
+//!
+//! ## Environment Variables
+//!
+//! - `DATABASE_URL` or `MONGODB_URL`: MongoDB connection string
+//! - `BOOTSTRAP_ADMIN_KEY`: Initial admin API key (optional, for first-time setup)
+#![feature(duration_constructors, str_as_str)]
+
 use rocket::{catchers, http::Method, launch, routes};
 use rocket_cors::{AllowedOrigins, CorsOptions};
 use rocket_db_pools::Database;
@@ -11,6 +19,14 @@ pub mod errors;
 pub mod handlers;
 pub mod models;
 
+/// Main entry point for the Rocket application.
+///
+/// Initializes the authentication service, database connection, and CORS configuration.
+/// If command-line arguments are provided, handles CLI commands before starting the server.
+///
+/// # Returns
+///
+/// A configured Rocket instance ready for launch.
 #[launch]
 async fn rocket() -> _ {
     let auth_service = AuthService::new();
