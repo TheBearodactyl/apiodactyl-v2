@@ -62,18 +62,7 @@ async fn rocket() -> _ {
             catchers![handlers::catch401, handlers::catch404, handlers::catch500],
         )
         .mount("/", routes![handlers::index])
-        .mount(
-            "/reviews",
-            routes![
-                handlers::reviews::get_review_by_chapter,
-                handlers::reviews::get_review_by_oid,
-                handlers::reviews::get_reviews,
-                handlers::reviews::create_review,
-                handlers::reviews::delete_review,
-                handlers::reviews::patch_review_by_chapter,
-                handlers::reviews::batch_delete_reviews
-            ],
-        )
+        .mount("/reviews", handlers::reviews::routes())
         .mount(
             "/wplace",
             routes![
